@@ -50,6 +50,12 @@ import java.util.concurrent.atomic.AtomicLong;
 /** MySQL connection Utilities. */
 public class MySqlConnectionUtils {
 
+    /**
+     * Lists binlog files. MySQL (since 4.1.1), MariaDB and OceanBase all accept it, while the
+     * synonym SHOW MASTER LOGS is removed in MySQL 8.4 and rejected by OceanBase.
+     */
+    private static final String SHOW_BINARY_LOGS = "SHOW BINARY LOGS";
+
     /** Creates a new {@link MySqlConnection}, but not open the connection. */
     public static MySqlConnection createMySqlConnection(Configuration dbzConfiguration) {
         return new MySqlConnection(new CustomMySqlConnectionConfiguration(dbzConfiguration));
@@ -81,10 +87,6 @@ public class MySqlConnectionUtils {
 
     /** Fetch earliest binlog offsets in MySql Server. */
     public static BinlogOffset earliestBinlogOffset(JdbcConnection jdbc) {
-        final String showMasterStmt =
-                ((MySqlConnection) jdbc).binaryLogStatusStatement().startsWith("SHOW BINARY")
-                        ? "SHOW BINARY LOGS"
-                        : "SHOW MASTER LOGS";
         JdbcConnection.ResultSetMapper<BinlogOffset> getCurrentBinlogOffset =
                 rs -> {
                     final String binlogFilename = rs.getString(1);
@@ -92,7 +94,7 @@ public class MySqlConnectionUtils {
                     final long binlogPosition = 4L;
                     return new BinlogOffset(binlogFilename, binlogPosition, 0L, 0, 0, null, null);
                 };
-        return getBinlogOffset(jdbc, showMasterStmt, getCurrentBinlogOffset);
+        return getBinlogOffset(jdbc, SHOW_BINARY_LOGS, getCurrentBinlogOffset);
     }
 
     /** Fetch current binlog offsets in MySql Server. */
@@ -199,10 +201,6 @@ public class MySqlConnectionUtils {
 
     public static BinlogOffset findBinlogOffsetBytimestamp(
             JdbcConnection jdbc, BinaryLogClient client, long timestamp) {
-        final String showBinaryLogStmt =
-                ((MySqlConnection) jdbc).binaryLogStatusStatement().startsWith("SHOW BINARY")
-                        ? "SHOW BINARY LOGS"
-                        : "SHOW MASTER LOGS";
         List<String> binlogFiles = new ArrayList<>();
         JdbcConnection.ResultSetConsumer rsc =
                 rs -> {
@@ -215,7 +213,7 @@ public class MySqlConnectionUtils {
                     }
                 };
         try {
-            jdbc.query(showBinaryLogStmt, rsc);
+            jdbc.query(SHOW_BINARY_LOGS, rsc);
             if (binlogFiles.isEmpty()) {
                 return BinlogOffset.INITIAL_OFFSET;
             }
